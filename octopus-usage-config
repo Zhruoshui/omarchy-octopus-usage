@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Configure the Octopus Usage omarchy plugin.
+#
+#   octopus-usage-config <base-url> <username> [password]
+#
+# Password is read interactively when omitted. Writes
+# ~/.local/state/omarchy/settings/octopus-usage.json (mode 600), which the
+# plugin reads live. The stored password is needed because the gateway's
+# auth token expires every 30 days and its JWT is signed with
+# username+password — the plugin re-logs-in transparently.
+set -euo pipefail
+
+if [ "$#" -lt 2 ]; then
+  echo "usage: octopus-usage-config <base-url> <username> [password]" >&2
+  exit 1
+fi
+
+base_url="${1%/}"
+username="$2"
+password="${3-}"
+if [ -z "$password" ]; then
+  printf 'password: ' >&2
+  read -rs password
+  printf '\n' >&2
+fi
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/settings"
+file="$state_dir/octopus-usage.json"
+umask 077
+mkdir -p "$state_dir"
+
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+# Rebuild from scratch fields first, preserving token if the base url/user match.
+jq -n --arg b "$base_url" --arg u "$username" --arg p "$password" \
+  '{baseUrl:$b, username:$u, password:$p, refreshMinutes:5, token:"", tokenDate:""}' > "$tmp"
+if [ -f "$file" ] && command -v jq >/dev/null; then
+  old_base=$(jq -r '.baseUrl // ""' "$file")
+  old_user=$(jq -r '.username // ""' "$file")
+  old_token=$(jq -r '.token // ""' "$file")
+  old_date=$(jq -r '.tokenDate // ""' "$file")
+  old_refresh=$(jq -r '.refreshMinutes // 5' "$file")
+  if [ "$old_base" = "$base_url" ] && [ "$old_user" = "$username" ] && [ -n "$old_token" ]; then
+    jq --arg t "$old_token" --arg d "$old_date" --argjson r "$old_refresh" \
+      '.token=$t | .tokenDate=$d | .refreshMinutes=$r' "$tmp" > "$tmp.new" && mv "$tmp.new" "$tmp"
+  fi
+fi
+mv "$tmp" "$file"
+echo "configured: $file"

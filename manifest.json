@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.zhruoshui.octopus-usage",
+  "name": "Octopus Usage",
+  "version": "0.1.0",
+  "author": "Zhruoshui",
+  "license": "MIT",
+  "homepage": "https://github.com/Zhruoshui/omarchy-octopus-usage",
+  "description": "AI usage stats from a self-hosted Octopus LLM gateway: today's spend in the bar, full dashboard in the panel",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Octopus Usage",
+    "description": "Today's AI spend and request stats from an Octopus gateway, with a detailed dashboard panel",
+    "category": "Info",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
