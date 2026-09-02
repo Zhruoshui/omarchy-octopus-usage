@@ -27,9 +27,17 @@ goes stale.
 
 ```bash
 omarchy plugin add https://github.com/Zhruoshui/omarchy-octopus-usage.git --enable
-octopus-usage-config https://your-octopus.example.com <username>
+
+# Configure access to your Octopus instance (script lives inside the plugin
+# dir; omarchy plugin add does not put it on PATH):
+~/.config/omarchy/plugins/io.github.zhruoshui.octopus-usage/octopus-usage-config \
+  https://your-octopus.example.com <username>
 # or pass the password as a third argument:
-octopus-usage-config https://your-octopus.example.com <username> <password>
+~/.config/omarchy/plugins/io.github.zhruoshui.octopus-usage/octopus-usage-config \
+  https://your-octopus.example.com <username> <password>
+
+# Optional: make the command available by name:
+ln -s ~/.config/omarchy/plugins/io.github.zhruoshui.octopus-usage/octopus-usage-config ~/.local/bin/
 ```
 
 `octopus-usage-config` writes
