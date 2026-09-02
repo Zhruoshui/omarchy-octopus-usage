@@ -3,8 +3,8 @@
 An [Omarchy shell](https://omarchy.org/) bar widget that tracks AI usage from a
 self-hosted [Octopus](https://github.com/bestruirui/octopus) LLM gateway.
 
-The bar shows today's spend; clicking opens a panel with today / all-time
-stats, a 14-day cost chart, and a per-API-key breakdown.
+The bar shows today's token usage (e.g. `2.4M`); clicking opens a panel with
+today / all-time stats and a 14-day cost chart.
 
 ## Setup
 

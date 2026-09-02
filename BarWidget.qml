@@ -8,8 +8,8 @@ import qs.Ui
 import "Model.js" as Model
 
 // Octopus usage dashboard. One entry point: a bar pill showing today's
-// spend, which opens a panel with today/total stats, per-key breakdown, and
-// a 14-day cost chart. All HTTP goes through curl child processes — the
+// token usage, which opens a panel with today/total stats and a 14-day
+// cost chart. All HTTP goes through curl child processes — the
 // shell process itself never makes network connections — and credentials
 // live in ~/.local/state/omarchy/settings/octopus-usage.json (mode 600).
 Panel {
@@ -22,7 +22,6 @@ Panel {
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
-  readonly property color dim: Qt.darker(foreground, 1.4)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // ---- configuration -------------------------------------------------------
@@ -56,8 +55,6 @@ Panel {
 
   property var today: null
   property var total: null
-  property var apiKeys: []       // [{id, name, enabled}] from /apikey/list
-  property var keyStats: []      // raw metrics rows from /stats/apikey
   property var daily: []
   property string fetchError: ""
   property string lastUpdated: ""
@@ -69,33 +66,11 @@ Panel {
   readonly property var totalTotals: Model.metricTotal(totalMetric)
   readonly property var chartDays: Model.recentDays(daily, 14)
 
-  // Per-key rows joined by id, richest cost first.
-  readonly property var keyRows: {
-    var byId = {}
-    var rows = []
-    for (var i = 0; i < keyStats.length; i++) {
-      var stat = keyStats[i] || {}
-      byId[stat.api_key_id] = stat
-    }
-    for (var j = 0; j < apiKeys.length; j++) {
-      var key = apiKeys[j] || {}
-      var m = Model.metric(byId[key.id])
-      rows.push({
-        name: String(key.name || ("#" + key.id)),
-        enabled: key.enabled !== false,
-        metric: m,
-        totals: Model.metricTotal(m)
-      })
-    }
-    rows.sort(function(a, b) { return b.totals.cost - a.totals.cost })
-    return rows
-  }
-
   readonly property string label: {
     if (!configured) return ""
     if (fetchError !== "") return "!"
     if (!today) return "…"
-    return Model.formatMoney(todayTotals.cost)
+    return Model.formatTokenCount(todayTotals.tokens)
   }
 
   // ---- HTTP ----------------------------------------------------------------
@@ -160,8 +135,6 @@ Panel {
     var paths = {
       today: "/api/v1/stats/today",
       total: "/api/v1/stats/total",
-      apikeys: "/api/v1/apikey/list",
-      keystats: "/api/v1/stats/apikey",
       daily: "/api/v1/stats/daily"
     }
     var path = paths[stage]
@@ -201,12 +174,6 @@ Panel {
       runFetchStage("total")
     } else if (stage === "total") {
       total = data
-      runFetchStage("apikeys")
-    } else if (stage === "apikeys") {
-      apiKeys = Array.isArray(data) ? data : []
-      runFetchStage("keystats")
-    } else if (stage === "keystats") {
-      keyStats = Array.isArray(data) ? data : []
       runFetchStage("daily")
     } else if (stage === "daily") {
       daily = Array.isArray(data.items) ? data.items : []
@@ -329,12 +296,13 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     text: root.label
-    slotSize: Style.bar.statusSlot
+    fontSize: Style.font.caption
+    horizontalMargin: 6
     active: root.fetchError !== ""
     tooltipText: root.fetchError
 
@@ -551,64 +519,6 @@ Panel {
                 }
               }
             }
-          }
-
-          // ---- Per-key breakdown ----
-
-          PanelSeparator { width: parent.width; foreground: root.foreground }
-          PanelSectionHeader { text: "BY API KEY"; foreground: root.foreground; fontFamily: root.fontFamily }
-
-          Column {
-            width: parent.width
-            spacing: Style.spacing.xs
-            visible: root.keyRows.length > 0
-
-            Repeater {
-              model: root.keyRows
-
-              delegate: Row {
-                required property var modelData
-                width: parent.width
-                spacing: Style.spacing.sm
-
-                Text {
-                  width: Style.space(96)
-                  text: modelData.name
-                  color: modelData.enabled ? root.foreground : Qt.darker(root.foreground, 1.8)
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  elide: Text.ElideRight
-                }
-
-                Text {
-                  width: parent.width - Style.space(96) - Style.space(76) - parent.spacing * 2
-                  text: Model.formatTokenCount(modelData.totals.tokens) + " tok · "
-                    + Model.formatNumber(modelData.totals.requests) + " req"
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  elide: Text.ElideRight
-                }
-
-                Text {
-                  width: Style.space(76)
-                  text: Model.formatMoney(modelData.totals.cost)
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  horizontalAlignment: Text.AlignRight
-                }
-              }
-            }
-          }
-
-          Text {
-            visible: root.keyRows.length === 0 && root.fetchError === ""
-            width: parent.width
-            text: "No API keys yet."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
           }
         }
       }
