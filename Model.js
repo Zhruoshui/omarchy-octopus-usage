@@ -84,7 +84,8 @@ function formatNumber(value) {
   return n.toLocaleString(Qt.locale(), "f", 0)
 }
 
-// wait_time is cumulative seconds across requests.
+// wait_time is cumulative milliseconds across requests (~20s each for LLM
+// calls); formatDuration takes seconds.
 function formatDuration(seconds) {
   var s = Math.max(0, Math.round(Number(seconds) || 0))
   if (s < 60) return s + "s"
@@ -103,10 +104,12 @@ function normalizeDate(dateString) {
   return text
 }
 
-function dayName(dateString) {
-  var parsed = new Date(normalizeDate(dateString) + "T00:00:00")
-  if (isNaN(parsed.getTime())) return String(dateString || "")
-  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][parsed.getDay()]
+// "20260902" -> "2": day of month without leading zero, for chart axis
+// labels where weekday letters are ambiguous and two digits still fit.
+function dayOfMonth(dateString) {
+  var text = String(dateString || "")
+  if (!/^\d{8}$/.test(text)) return ""
+  return String(parseInt(text.slice(6, 8), 10))
 }
 
 // Last `count` daily entries, oldest first, for a bar chart.

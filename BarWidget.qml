@@ -457,7 +457,7 @@ Panel {
               foreground: root.foreground
               fontFamily: root.fontFamily
               title: "Wait time"
-              value: Model.formatDuration(root.totalMetric.waitTime)
+              value: Model.formatDuration(root.totalMetric.waitTime / 1000)
             }
           }
 
@@ -481,6 +481,8 @@ Panel {
             readonly property real barWidth: root.chartDays.length > 0
               ? (width - (root.chartDays.length - 1) * row.spacing) / root.chartDays.length : 0
             readonly property string todayKey: Model.todayKey(root.nowMs)
+            // Space reserved below the axis line for the date labels.
+            readonly property real labelHeight: Style.space(14)
 
             Row {
               id: row
@@ -497,10 +499,11 @@ Panel {
                   readonly property real dayCost: Model.dayCost(modelData)
                   readonly property bool isToday: String(modelData.date || "") === chartRoot.todayKey
                   readonly property real barHeight: chartRoot.peakCost > 0
-                    ? Math.max(2, (dayCost / chartRoot.peakCost) * (height - Style.space(14))) : 2
+                    ? Math.max(2, (dayCost / chartRoot.peakCost) * (height - chartRoot.labelHeight)) : 2
 
                   Rectangle {
                     anchors.bottom: parent.bottom
+                    anchors.bottomMargin: chartRoot.labelHeight
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: Math.max(2, parent.width - Style.space(2))
                     height: parent.barHeight
@@ -511,13 +514,22 @@ Panel {
                   Text {
                     anchors.bottom: parent.bottom
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: Model.dayName(modelData.date).slice(0, 1)
+                    text: Model.dayOfMonth(modelData.date)
                     color: parent.isToday ? root.foreground : Qt.darker(root.foreground, 1.8)
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                   }
                 }
               }
+            }
+
+            // Axis line separating bars from date labels.
+            Rectangle {
+              anchors.bottom: parent.bottom
+              anchors.bottomMargin: chartRoot.labelHeight
+              width: parent.width
+              height: 1
+              color: Qt.darker(root.foreground, 1.8)
             }
           }
         }
