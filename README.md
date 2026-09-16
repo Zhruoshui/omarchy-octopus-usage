@@ -12,7 +12,8 @@ plugin puts your usage on your bar.
 ## How it works
 
 The widget talks to your Octopus instance's stats API
-(`/api/v1/stats/today`, `/stats/total`, `/stats/daily`). Nothing is inferred
+(`/api/v1/stats/hourly`, `/stats/total`, `/stats/daily` — 0.13.x replaced
+`/stats/today` with per-hour rows, summed client-side). Nothing is inferred
 or guessed — every number on screen comes straight from Octopus.
 
 All HTTP runs through `curl` child processes; the Quickshell process itself

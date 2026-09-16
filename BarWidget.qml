@@ -75,9 +75,10 @@ Panel {
 
   // ---- HTTP ----------------------------------------------------------------
 
-  // Fetch chain: today -> total -> keys -> keyStats -> daily. Chaining one
-  // process instead of five in parallel keeps the 401 path simple: any
-  // unauthorized response logs in once and reruns the chain from the top.
+  // Fetch chain: hourly -> total -> daily (0.13.x replaced /stats/today
+  // with per-hour /stats/hourly rows). Chaining one process instead of
+  // three in parallel keeps the 401 path simple: any unauthorized response
+  // logs in once and reruns the chain from the top.
   Process {
     id: fetchProc
     running: false
@@ -128,12 +129,12 @@ Panel {
   function refresh() {
     if (!configured || fetchProc.running || loginProc.running) return
     fetchError = ""
-    runFetchStage("today")
+    runFetchStage("hourly")
   }
 
   function runFetchStage(stage) {
     var paths = {
-      today: "/api/v1/stats/today",
+      hourly: "/api/v1/stats/hourly",
       total: "/api/v1/stats/total",
       daily: "/api/v1/stats/daily"
     }
@@ -169,8 +170,8 @@ Panel {
       }
       return
     }
-    if (stage === "today") {
-      today = data
+    if (stage === "hourly") {
+      today = Model.hourlyTotal(data)
       runFetchStage("total")
     } else if (stage === "total") {
       total = data
@@ -223,7 +224,7 @@ Panel {
     config.tokenDate = Model.todayKey(Date.now())
     persistToken(match[1])
     reloginPending = false
-    runFetchStage("today")
+    runFetchStage("hourly")
   }
 
   function persistToken(token) {
@@ -483,6 +484,16 @@ Panel {
             readonly property string todayKey: Model.todayKey(root.nowMs)
             // Space reserved below the axis line for the date labels.
             readonly property real labelHeight: Style.space(14)
+            // Hover state: which day is focused and where its bar sits,
+            // so the floating label can follow the bar top.
+            property int hoveredIndex: -1
+            property real hoveredCenterX: 0
+            readonly property real hoveredBarTop: {
+              if (hoveredIndex < 0) return 0
+              var cost = Model.dayCost(root.chartDays[hoveredIndex])
+              var h = peakCost > 0 ? Math.max(2, (cost / peakCost) * (height - labelHeight)) : 2
+              return height - labelHeight - h
+            }
 
             Row {
               id: row
@@ -492,7 +503,10 @@ Panel {
                 model: root.chartDays
 
                 delegate: Item {
+                  id: barDelegate
+
                   required property var modelData
+                  required property int index
                   width: chartRoot.barWidth
                   height: parent.height
 
@@ -500,6 +514,19 @@ Panel {
                   readonly property bool isToday: String(modelData.date || "") === chartRoot.todayKey
                   readonly property real barHeight: chartRoot.peakCost > 0
                     ? Math.max(2, (dayCost / chartRoot.peakCost) * (height - chartRoot.labelHeight)) : 2
+                  readonly property bool hovered: chartRoot.hoveredIndex === index
+
+                  HoverHandler {
+                    cursorShape: Qt.PointingHandCursor
+                    onHoveredChanged: {
+                      if (hovered) {
+                        chartRoot.hoveredIndex = barDelegate.index
+                        chartRoot.hoveredCenterX = barDelegate.x + barDelegate.width / 2
+                      } else if (chartRoot.hoveredIndex === barDelegate.index) {
+                        chartRoot.hoveredIndex = -1
+                      }
+                    }
+                  }
 
                   Rectangle {
                     anchors.bottom: parent.bottom
@@ -508,16 +535,27 @@ Panel {
                     width: Math.max(2, parent.width - Style.space(2))
                     height: parent.barHeight
                     radius: Math.min(2, width / 2)
-                    color: parent.isToday ? root.urgent : Qt.darker(root.foreground, 1.8)
+                    color: barDelegate.hovered
+                      ? root.foreground
+                      : (barDelegate.isToday ? root.urgent : Qt.darker(root.foreground, 1.8))
+                    // Pop the hovered bar up from its base and dim the rest.
+                    scale: barDelegate.hovered ? 1.18 : 1
+                    transformOrigin: Item.Bottom
+                    opacity: chartRoot.hoveredIndex >= 0 && !barDelegate.hovered ? 0.4 : 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
                   }
 
                   Text {
                     anchors.bottom: parent.bottom
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: Model.dayOfMonth(modelData.date)
-                    color: parent.isToday ? root.foreground : Qt.darker(root.foreground, 1.8)
+                    color: barDelegate.hovered || barDelegate.isToday
+                      ? root.foreground : Qt.darker(root.foreground, 1.8)
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
+                    Behavior on color { ColorAnimation { duration: 120 } }
                   }
                 }
               }
@@ -530,6 +568,40 @@ Panel {
               width: parent.width
               height: 1
               color: Qt.darker(root.foreground, 1.8)
+            }
+
+            // Floating label for the hovered day, gliding along bar tops.
+            Rectangle {
+              id: hoverTip
+              readonly property bool shown: chartRoot.hoveredIndex >= 0
+              opacity: shown ? 1 : 0
+              visible: opacity > 0
+              y: Math.max(0, chartRoot.hoveredBarTop - height - Style.space(4))
+              x: Math.max(0, Math.min(chartRoot.width - width, chartRoot.hoveredCenterX - width / 2))
+              width: hoverTipText.implicitWidth + Style.space(14)
+              height: hoverTipText.implicitHeight + Style.space(6)
+              radius: height / 2
+              color: Color.tooltip.background
+              border.width: 1
+              border.color: Color.tooltip.border
+              Behavior on opacity { NumberAnimation { duration: 120 } }
+              Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+              Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+              Text {
+                id: hoverTipText
+                anchors.centerIn: parent
+                text: {
+                  var day = hoverTip.shown ? root.chartDays[chartRoot.hoveredIndex] : null
+                  if (!day) return ""
+                  var m = Model.metric(day)
+                  return Model.shortDate(day.date) + " · " + Model.formatMoney(m.inputCost + m.outputCost)
+                    + " · " + Model.formatTokenCount(m.inputToken + m.outputToken) + " tok"
+                }
+                color: Color.tooltip.text
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
             }
           }
         }

@@ -60,6 +60,25 @@ function metricTotal(m) {
   }
 }
 
+// Octopus 0.13.x replaced /stats/today with per-hour /stats/hourly rows.
+// Sum them back into one raw-shaped (snake_case) entry so metric() and
+// everything downstream keep working unchanged.
+function hourlyTotal(items) {
+  var sum = { input_token: 0, output_token: 0, input_cost: 0, output_cost: 0,
+    wait_time: 0, request_success: 0, request_failed: 0 }
+  var list = Array.isArray(items) ? items : []
+  for (var i = 0; i < list.length; i++) {
+    var m = metric(list[i])
+    sum.input_token += m.inputToken
+    sum.output_token += m.outputToken
+    sum.input_cost += m.inputCost
+    sum.output_cost += m.outputCost
+    sum.wait_time += m.waitTime
+    sum.request_success += m.requestSuccess
+    sum.request_failed += m.requestFailed
+  }
+  return sum
+}
 function formatMoney(value) {
   var amount = Number(value)
   if (!isFinite(amount)) amount = 0
@@ -102,6 +121,14 @@ function normalizeDate(dateString) {
   var text = String(dateString || "")
   if (/^\d{8}$/.test(text)) return text.slice(0, 4) + "-" + text.slice(4, 6) + "-" + text.slice(6, 8)
   return text
+}
+
+
+// "20260915" -> "9/15", for compact hover labels.
+function shortDate(dateString) {
+  var text = String(dateString || "")
+  if (!/^\d{8}$/.test(text)) return text
+  return parseInt(text.slice(4, 6), 10) + "/" + parseInt(text.slice(6, 8), 10)
 }
 
 // "20260902" -> "2": day of month without leading zero, for chart axis
