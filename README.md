@@ -9,8 +9,8 @@ plugin puts your usage on your bar.
   — the metric is configurable (tokens / cost / requests)
 - **Panel**: today / all-time cost, requests, success rate, input & output
   tokens, cumulative wait time, and a 14-day bar chart measuring cost or
-  tokens (configurable). A collapsed **DISPLAY** box at the bottom switches
-  both; the choices persist in the state file.
+  tokens (configurable). An always-visible **DISPLAY** box at the panel bottom
+  switches both; the choices persist in the state file.
 ## How it works
 
 The widget talks to your Octopus instance's stats API
@@ -65,8 +65,11 @@ omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml
 ```
 
-Files under `~/.config/omarchy/plugins/io.github.zhruoshui.octopus-usage/`
-hot-reload on save.
+Saving a file under `~/.config/omarchy/plugins/io.github.zhruoshui.octopus-usage/`
+did not hot-reload the running shell in testing: it kept executing the
+previous code while the widget's IPC target still answered, so a quick
+"it loaded" check is misleading. Apply plugin changes with
+`omarchy restart shell`.
 
 ## Credits & License
 

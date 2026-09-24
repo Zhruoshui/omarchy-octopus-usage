@@ -508,7 +508,7 @@ Panel {
 
           PanelSeparator { width: parent.width; foreground: root.foreground }
           PanelSectionHeader {
-            text: "LAST 14 DAYS · " + (root.chartMetric === "tokens" ? "TOKENS" : "COST")
+            text: "LAST 14 DAYS · " + (root.config.chartMetric === "tokens" ? "TOKENS" : "COST")
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
@@ -522,7 +522,7 @@ Panel {
             readonly property real peakValue: {
               var peak = 0
               for (var i = 0; i < root.chartDays.length; i++)
-                peak = Math.max(peak, Model.chartValue(root.chartDays[i], root.chartMetric))
+                peak = Math.max(peak, Model.chartValue(root.chartDays[i], root.config.chartMetric))
               return peak
             }
             readonly property real barWidth: root.chartDays.length > 0
@@ -536,7 +536,7 @@ Panel {
             property real hoveredCenterX: 0
             readonly property real hoveredBarTop: {
               if (hoveredIndex < 0) return 0
-              var value = Model.chartValue(root.chartDays[hoveredIndex], root.chartMetric)
+              var value = Model.chartValue(root.chartDays[hoveredIndex], root.config.chartMetric)
               var h = peakValue > 0 ? Math.max(2, (value / peakValue) * (height - labelHeight)) : 2
               return height - labelHeight - h
             }
@@ -556,7 +556,7 @@ Panel {
                   width: chartRoot.barWidth
                   height: parent.height
 
-                  readonly property real dayValue: Model.chartValue(modelData, root.chartMetric)
+                  readonly property real dayValue: Model.chartValue(modelData, root.config.chartMetric)
                   readonly property bool isToday: String(modelData.date || "") === chartRoot.todayKey
                   readonly property real barHeight: chartRoot.peakValue > 0
                     ? Math.max(2, (dayValue / chartRoot.peakValue) * (height - chartRoot.labelHeight)) : 2
@@ -642,10 +642,10 @@ Panel {
                   var m = Model.metric(day)
                   // Lead with the metric the chart is measuring; the other one
                   // stays visible so no information is lost on switch.
-                  var main = root.chartMetric === "tokens"
+                  var main = root.config.chartMetric === "tokens"
                     ? Model.formatTokenCount(m.inputToken + m.outputToken) + " tok"
                     : Model.formatMoney(m.inputCost + m.outputCost)
-                  var other = root.chartMetric === "tokens"
+                  var other = root.config.chartMetric === "tokens"
                     ? Model.formatMoney(m.inputCost + m.outputCost)
                     : Model.formatTokenCount(m.inputToken + m.outputToken) + " tok"
                   return Model.shortDate(day.date) + " · " + main + " · " + other
