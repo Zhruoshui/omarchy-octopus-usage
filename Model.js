@@ -2,23 +2,33 @@
 // QML item state so BarWidget.qml stays about layout and lifecycle.
 
 // State file shape (owned by octopus-usage-config):
+// State file shape (owned by octopus-usage-config; barMetric/chartMetric
+// are also written back by the widget's DISPLAY settings):
 //   { "baseUrl": "...", "username": "...", "password": "...",
-//     "refreshMinutes": 5, "token": "...", "tokenDate": "20260901" }
-// Missing, blank, or unparseable means unconfigured.
+//     "refreshMinutes": 5, "token": "...", "tokenDate": "20260901",
+//     "barMetric": "tokens", "chartMetric": "cost" }
+// Missing, blank, or unparseable means unconfigured; missing or invalid
+// display metrics fall back to "tokens" / "cost".
 
 function parseConfigFile(raw) {
-  var unset = { baseUrl: "", username: "", password: "", refreshMinutes: 5, token: "", tokenDate: "" }
+  var unset = { baseUrl: "", username: "", password: "", refreshMinutes: 5, token: "", tokenDate: "", barMetric: "tokens", chartMetric: "cost" }
   try {
     var data = JSON.parse(String(raw || ""))
     if (!data || typeof data !== "object") return unset
     var minutes = parseInt(data.refreshMinutes, 10)
+    // Display preferences are validated here so the rest of the widget can
+    // trust the values blindly.
+    var barMetric = data.barMetric === "cost" || data.barMetric === "requests" ? data.barMetric : "tokens"
+    var chartMetric = data.chartMetric === "tokens" ? data.chartMetric : "cost"
     return {
       baseUrl: typeof data.baseUrl === "string" ? data.baseUrl.replace(/\/+$/, "") : "",
       username: typeof data.username === "string" ? data.username : "",
       password: typeof data.password === "string" ? data.password : "",
       refreshMinutes: isFinite(minutes) && minutes >= 1 ? minutes : 5,
       token: typeof data.token === "string" ? data.token : "",
-      tokenDate: typeof data.tokenDate === "string" ? data.tokenDate : ""
+      tokenDate: typeof data.tokenDate === "string" ? data.tokenDate : "",
+      barMetric: barMetric,
+      chartMetric: chartMetric
     }
   } catch (e) {
     return unset
@@ -148,9 +158,19 @@ function recentDays(daily, count) {
   return items
 }
 
-function dayCost(entry) {
+// Bar magnitude for a daily entry, by chart preference key: money or tokens.
+// (Parameter is `kind` because `metric` is already this file's entry parser.)
+function chartValue(entry, kind) {
   var m = metric(entry)
-  return m.inputCost + m.outputCost
+  return kind === "tokens" ? m.inputToken + m.outputToken : m.inputCost + m.outputCost
+}
+
+
+// Bar pill label for one metricTotal, by bar preference key.
+function formatBarMetric(totals, kind) {
+  if (kind === "cost") return formatMoney(totals.cost)
+  if (kind === "requests") return formatNumber(totals.requests)
+  return formatTokenCount(totals.tokens)
 }
 
 // Local calendar date as Octopus's yyyymmdd key.

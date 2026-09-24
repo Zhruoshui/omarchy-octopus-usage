@@ -6,9 +6,11 @@ gateway. If you run Octopus to pool and proxy your AI provider keys, this
 plugin puts your usage on your bar.
 
 - **Bar pill**: today's total tokens, e.g. `2.4M` (`!` on errors, `…` while loading)
+  — the metric is configurable (tokens / cost / requests)
 - **Panel**: today / all-time cost, requests, success rate, input & output
-  tokens, cumulative wait time, and a 14-day cost bar chart
-
+  tokens, cumulative wait time, and a 14-day bar chart measuring cost or
+  tokens (configurable). A collapsed **DISPLAY** box at the bottom switches
+  both; the choices persist in the state file.
 ## How it works
 
 The widget talks to your Octopus instance's stats API

@@ -29,7 +29,7 @@ Panel {
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/settings"
   readonly property string configPath: stateDir + "/octopus-usage.json"
 
-  property var config: ({ baseUrl: "", username: "", password: "", refreshMinutes: 5, token: "", tokenDate: "" })
+  property var config: ({ baseUrl: "", username: "", password: "", refreshMinutes: 5, token: "", tokenDate: "", barMetric: "tokens", chartMetric: "cost" })
   readonly property bool configured: config.baseUrl !== "" && config.username !== "" && config.password !== ""
   readonly property int refreshMinutes: config.refreshMinutes
 
@@ -58,6 +58,7 @@ Panel {
   property var daily: []
   property string fetchError: ""
   property string lastUpdated: ""
+  property bool settingsOpen: false
   property double nowMs: Date.now()
 
   readonly property var todayMetric: Model.metric(today)
@@ -70,7 +71,7 @@ Panel {
     if (!configured) return ""
     if (fetchError !== "") return "!"
     if (!today) return "…"
-    return Model.formatTokenCount(todayTotals.tokens)
+    return Model.formatBarMetric(todayTotals, config.barMetric)
   }
 
   // ---- HTTP ----------------------------------------------------------------
@@ -233,6 +234,41 @@ Panel {
       'tmp="$(mktemp)"; jq --arg t "$2" --arg d "$3" \'.token=$t | .tokenDate=$d\' "$f" > "$tmp"; mv "$tmp" "$f"',
       "bash", configPath, token, Model.todayKey(Date.now())]
     writeConfigProc.running = true
+  }
+
+  // Display preferences round-trip through jq like the token: values go into
+  // the state file without ever touching a QML command line. The FileView's
+  // change watcher then re-reads the file, so `config` converges on disk.
+  Process {
+    id: writePrefsProc
+    running: false
+    command: []
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") console.warn("octopus-usage prefs", text.trim())
+    }
+  }
+
+  function setBarMetric(metric) {
+    if (config.barMetric === metric) return
+    var next = Object.assign({}, config, { barMetric: metric })
+    config = next
+    persistPrefs()
+  }
+
+  function setChartMetric(metric) {
+    if (config.chartMetric === metric) return
+    var next = Object.assign({}, config, { chartMetric: metric })
+    config = next
+    persistPrefs()
+  }
+
+  function persistPrefs() {
+    writePrefsProc.command = ["bash", "-c",
+      'set -e; umask 077; f="$1"; [ -f "$f" ] || exit 0; ' +
+      'tmp="$(mktemp)"; jq --arg b "$2" --arg c "$3" \'.barMetric=$b | .chartMetric=$c\' "$f" > "$tmp"; mv "$tmp" "$f"',
+      "bash", configPath, config.barMetric, config.chartMetric]
+    writePrefsProc.running = true
   }
 
   // ---- retry / polling -----------------------------------------------------
@@ -465,7 +501,11 @@ Panel {
           // ---- Last 14 days chart ----
 
           PanelSeparator { width: parent.width; foreground: root.foreground }
-          PanelSectionHeader { text: "LAST 14 DAYS · COST"; foreground: root.foreground; fontFamily: root.fontFamily }
+          PanelSectionHeader {
+            text: "LAST 14 DAYS · " + (root.chartMetric === "tokens" ? "TOKENS" : "COST")
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
 
           Item {
             id: chartRoot
@@ -473,10 +513,10 @@ Panel {
             height: Style.space(72)
             visible: root.chartDays.length > 0
 
-            readonly property real peakCost: {
+            readonly property real peakValue: {
               var peak = 0
               for (var i = 0; i < root.chartDays.length; i++)
-                peak = Math.max(peak, Model.dayCost(root.chartDays[i]))
+                peak = Math.max(peak, Model.chartValue(root.chartDays[i], root.chartMetric))
               return peak
             }
             readonly property real barWidth: root.chartDays.length > 0
@@ -490,8 +530,8 @@ Panel {
             property real hoveredCenterX: 0
             readonly property real hoveredBarTop: {
               if (hoveredIndex < 0) return 0
-              var cost = Model.dayCost(root.chartDays[hoveredIndex])
-              var h = peakCost > 0 ? Math.max(2, (cost / peakCost) * (height - labelHeight)) : 2
+              var value = Model.chartValue(root.chartDays[hoveredIndex], root.chartMetric)
+              var h = peakValue > 0 ? Math.max(2, (value / peakValue) * (height - labelHeight)) : 2
               return height - labelHeight - h
             }
 
@@ -510,11 +550,10 @@ Panel {
                   width: chartRoot.barWidth
                   height: parent.height
 
-                  readonly property real dayCost: Model.dayCost(modelData)
+                  readonly property real dayValue: Model.chartValue(modelData, root.chartMetric)
                   readonly property bool isToday: String(modelData.date || "") === chartRoot.todayKey
-                  readonly property real barHeight: chartRoot.peakCost > 0
-                    ? Math.max(2, (dayCost / chartRoot.peakCost) * (height - chartRoot.labelHeight)) : 2
-                  readonly property bool hovered: chartRoot.hoveredIndex === index
+                  readonly property real barHeight: chartRoot.peakValue > 0
+                    ? Math.max(2, (dayValue / chartRoot.peakValue) * (height - chartRoot.labelHeight)) : 2
 
                   HoverHandler {
                     cursorShape: Qt.PointingHandCursor
@@ -595,12 +634,103 @@ Panel {
                   var day = hoverTip.shown ? root.chartDays[chartRoot.hoveredIndex] : null
                   if (!day) return ""
                   var m = Model.metric(day)
-                  return Model.shortDate(day.date) + " · " + Model.formatMoney(m.inputCost + m.outputCost)
-                    + " · " + Model.formatTokenCount(m.inputToken + m.outputToken) + " tok"
+                  // Lead with the metric the chart is measuring; the other one
+                  // stays visible so no information is lost on switch.
+                  var main = root.chartMetric === "tokens"
+                    ? Model.formatTokenCount(m.inputToken + m.outputToken) + " tok"
+                    : Model.formatMoney(m.inputCost + m.outputCost)
+                  var other = root.chartMetric === "tokens"
+                    ? Model.formatMoney(m.inputCost + m.outputCost)
+                    : Model.formatTokenCount(m.inputToken + m.outputToken) + " tok"
+                  return Model.shortDate(day.date) + " · " + main + " · " + other
                 }
                 color: Color.tooltip.text
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          // ---- Display ----
+          //
+          // Collapsed-by-default box: clicking the header reveals chip rows
+          // that pick what the bar pill shows and what the chart measures.
+          // Both choices persist into the state file (jq write, like the
+          // token) and survive panel restarts.
+
+          PanelSeparator { width: parent.width; foreground: root.foreground }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+
+            Item {
+              id: displayHeader
+              width: parent.width
+              height: displayHeaderRow.height
+
+              RowLayout {
+                id: displayHeaderRow
+                width: parent.width
+
+                Text {
+                  text: "DISPLAY"
+                  color: Qt.darker(root.foreground, 1.4)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  // Same overshoot reservation as PanelSectionHeader.
+                  topPadding: Math.ceil(font.pixelSize * 0.15)
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                  text: root.settingsOpen ? "▾" : "▸"
+                  color: Qt.darker(root.foreground, 1.4)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.settingsOpen = !root.settingsOpen
+              }
+            }
+
+            Item {
+              width: parent.width
+              height: root.settingsOpen ? prefsContent.implicitHeight : 0
+              clip: true
+
+              Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+              Column {
+                id: prefsContent
+                width: parent.width
+                spacing: Style.space(8)
+
+                PrefsRow {
+                  width: parent.width
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  label: "Bar pill shows"
+                  options: [["tokens", "Tokens"], ["cost", "Cost"], ["requests", "Requests"]]
+                  current: root.config.barMetric
+                  onPicked: function(key) { root.setBarMetric(key) }
+                }
+
+                PrefsRow {
+                  width: parent.width
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  label: "Chart shows"
+                  options: [["cost", "Cost"], ["tokens", "Tokens"]]
+                  current: root.config.chartMetric
+                  onPicked: function(key) { root.setChartMetric(key) }
+                }
               }
             }
           }
@@ -637,6 +767,83 @@ Panel {
       color: Qt.darker(cell.foreground, 1.4)
       font.family: cell.fontFamily
       font.pixelSize: Style.font.caption
+    }
+  }
+
+  // Caption label + a run of mutually exclusive chips. `options` is an array
+  // of [key, label] pairs; `current` marks the selected key and clicking a
+  // chip emits `picked(key)`.
+  component PrefsRow: Column {
+    id: prefsRow
+    property color foreground: Color.foreground
+    property string fontFamily: Style.font.family
+    property string label: ""
+    property var options: []
+    property string current: ""
+    signal picked(string key)
+
+    spacing: Style.spacing.sm
+
+    Text {
+      text: prefsRow.label
+      color: Qt.darker(prefsRow.foreground, 1.4)
+      font.family: prefsRow.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Row {
+      spacing: Style.spacing.sm
+
+      Repeater {
+        model: prefsRow.options
+
+        delegate: OptionChip {
+          required property var modelData
+          text: modelData[1]
+          checked: prefsRow.current === modelData[0]
+          foreground: prefsRow.foreground
+          fontFamily: prefsRow.fontFamily
+          onClicked: prefsRow.picked(modelData[0])
+        }
+      }
+    }
+  }
+
+  // Small pill button used by PrefsRow; `checked` is the selected state.
+  component OptionChip: Rectangle {
+    id: chip
+    property string text: ""
+    property bool checked: false
+    property color foreground: Color.foreground
+    property string fontFamily: Style.font.family
+    signal clicked()
+
+    readonly property real padX: Style.space(12)
+    readonly property real padY: Style.space(5)
+    width: chipText.implicitWidth + padX * 2
+    height: chipText.implicitHeight + padY * 2
+    radius: height / 2
+    color: checked ? foreground : "transparent"
+    border.width: 1
+    border.color: checked ? foreground : Qt.darker(foreground, 1.8)
+
+    Behavior on color { ColorAnimation { duration: 120 } }
+
+    Text {
+      id: chipText
+      anchors.centerIn: parent
+      text: chip.text
+      color: chip.checked ? Color.background : Qt.darker(chip.foreground, 1.4)
+      font.family: chip.fontFamily
+      font.pixelSize: Style.font.caption
+
+      Behavior on color { ColorAnimation { duration: 120 } }
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: chip.clicked()
     }
   }
 }

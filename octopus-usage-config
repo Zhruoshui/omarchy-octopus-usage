@@ -44,6 +44,14 @@ if [ -f "$file" ] && command -v jq >/dev/null; then
     jq --arg t "$old_token" --arg d "$old_date" --argjson r "$old_refresh" \
       '.token=$t | .tokenDate=$d | .refreshMinutes=$r' "$tmp" > "$tmp.new" && mv "$tmp.new" "$tmp"
   fi
+  # Display preferences are written by the widget's panel; carry them over
+  # so re-configuring credentials doesn't reset the bar/chart choices.
+  old_bar=$(jq -r '.barMetric // ""' "$file")
+  old_chart=$(jq -r '.chartMetric // ""' "$file")
+  if [ -n "$old_bar" ] && [ -n "$old_chart" ]; then
+    jq --arg b "$old_bar" --arg c "$old_chart" \
+      '.barMetric=$b | .chartMetric=$c' "$tmp" > "$tmp.new" && mv "$tmp.new" "$tmp"
+  fi
 fi
 mv "$tmp" "$file"
 echo "configured: $file"
