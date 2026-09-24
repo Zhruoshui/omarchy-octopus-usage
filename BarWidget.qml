@@ -361,7 +361,8 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(640))
+    contentHeight: panel.fittedContentHeight(
+      column.implicitHeight + Style.space(12) + displayFooter.implicitHeight, Style.space(640))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -373,7 +374,12 @@ Panel {
 
       Flickable {
         id: panelFlick
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        // Stop above the always-visible display footer.
+        anchors.bottom: displayFooter.top
+        anchors.bottomMargin: Style.space(12)
         contentWidth: width
         contentHeight: column.implicitHeight
         clip: true
@@ -651,86 +657,98 @@ Panel {
             }
           }
 
-          // ---- Display ----
-          //
-          // Collapsed-by-default box: clicking the header reveals chip rows
-          // that pick what the bar pill shows and what the chart measures.
-          // Both choices persist into the state file (jq write, like the
-          // token) and survive panel restarts.
+        }
+      }
 
-          PanelSeparator { width: parent.width; foreground: root.foreground }
+      // ---- Display ----
+      //
+      // Collapsed-by-default box: clicking the header reveals chip rows that
+      // pick what the bar pill shows and what the chart measures. Both choices
+      // persist into the state file (a jq write, like the token).
+      //
+      // It sits outside the Flickable on purpose: the panel's height is capped
+      // (see contentHeight above), so anything at the end of the scroll column
+      // starts out below the fold. As a footer, the box is always on screen.
 
-          Column {
+      Column {
+        id: displayFooter
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        spacing: Style.space(8)
+
+        PanelSeparator { width: parent.width; foreground: root.foreground }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(8)
+
+          Item {
+            id: displayHeader
             width: parent.width
-            spacing: Style.space(8)
+            height: displayHeaderRow.height
 
-            Item {
-              id: displayHeader
+            RowLayout {
+              id: displayHeaderRow
               width: parent.width
-              height: displayHeaderRow.height
 
-              RowLayout {
-                id: displayHeaderRow
-                width: parent.width
-
-                Text {
-                  text: "DISPLAY"
-                  color: Qt.darker(root.foreground, 1.4)
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                  // Same overshoot reservation as PanelSectionHeader.
-                  topPadding: Math.ceil(font.pixelSize * 0.15)
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                  text: root.settingsOpen ? "▾" : "▸"
-                  color: Qt.darker(root.foreground, 1.4)
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
+              Text {
+                text: "DISPLAY"
+                color: Qt.darker(root.foreground, 1.4)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                // Same overshoot reservation as PanelSectionHeader.
+                topPadding: Math.ceil(font.pixelSize * 0.15)
               }
 
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.settingsOpen = !root.settingsOpen
+              Item { Layout.fillWidth: true }
+
+              Text {
+                text: root.settingsOpen ? "▾" : "▸"
+                color: Qt.darker(root.foreground, 1.4)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
               }
             }
 
-            Item {
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.settingsOpen = !root.settingsOpen
+            }
+          }
+
+          Item {
+            width: parent.width
+            height: root.settingsOpen ? prefsContent.implicitHeight : 0
+            clip: true
+
+            Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+            Column {
+              id: prefsContent
               width: parent.width
-              height: root.settingsOpen ? prefsContent.implicitHeight : 0
-              clip: true
+              spacing: Style.space(8)
 
-              Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-
-              Column {
-                id: prefsContent
+              PrefsRow {
                 width: parent.width
-                spacing: Style.space(8)
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                label: "Bar pill shows"
+                options: [["tokens", "Tokens"], ["cost", "Cost"], ["requests", "Requests"]]
+                current: root.config.barMetric
+                onPicked: function(key) { root.setBarMetric(key) }
+              }
 
-                PrefsRow {
-                  width: parent.width
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
-                  label: "Bar pill shows"
-                  options: [["tokens", "Tokens"], ["cost", "Cost"], ["requests", "Requests"]]
-                  current: root.config.barMetric
-                  onPicked: function(key) { root.setBarMetric(key) }
-                }
-
-                PrefsRow {
-                  width: parent.width
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
-                  label: "Chart shows"
-                  options: [["cost", "Cost"], ["tokens", "Tokens"]]
-                  current: root.config.chartMetric
-                  onPicked: function(key) { root.setChartMetric(key) }
-                }
+              PrefsRow {
+                width: parent.width
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                label: "Chart shows"
+                options: [["cost", "Cost"], ["tokens", "Tokens"]]
+                current: root.config.chartMetric
+                onPicked: function(key) { root.setChartMetric(key) }
               }
             }
           }
